@@ -35,7 +35,7 @@ class Client:
         self.client_id = client_id
         self.secret = secret
         self.domain = "" if is_blank(domain) else domain + "."
-        self.trace = False
+        self._trace = False
         self.token = None
         self.session = requests.Session()
         self._show = None
@@ -43,6 +43,9 @@ class Client:
         self.get_token()
 
     #-------- REST --------
+
+    def trace(self, flag):
+        self._trace = flag == True
     
     def _get_error_msg(self, json):
         # { "code": 400, "message": "Unable to process JSON" }
@@ -74,6 +77,9 @@ class Client:
         code = response.status_code
         if code == requests.codes.ok or code == requests.codes.accepted:
             return
+       
+        if self._trace and response.text is not None:
+            print("Error: ", response.text)
         error = None
         json = None
         try:
@@ -119,6 +125,14 @@ class Client:
         return headers
 
     def submit(self, req, headers=None):
+        '''
+        Internal method to submit a REST call with authentication.
+
+        If the first all fails with a 401 (unauthorized) response,
+        obtains a new temporary ticket and tries again.
+
+        See https://docs.imply.io/polaris/oauth/
+        '''
         r = req(self.session, self.add_token(headers))
         if r.status_code == requests.codes.unauthorized:
             self.get_token()
@@ -154,7 +168,7 @@ class Client:
         The `requests` `Request` object.
         '''
         url = self.build_url(req, args)
-        if self.trace:
+        if self._trace:
             print("GET:", url)
         r = self.submit(lambda session, h: session.get(url, params=params, headers=h))
         if require_ok:
@@ -175,7 +189,7 @@ class Client:
         parameters.
         """
         url = self.build_url(req, args)
-        if self.trace:
+        if self._trace:
             print("POST:", url)
             print("body:", body)
         r = self.submit(lambda session, h: session.post(url, data=body, headers=h), headers)
@@ -202,14 +216,14 @@ class Client:
         Does not parse error messages: that is up to the caller.
         """
         url = self.build_url(req, args)
-        if self.trace:
+        if self._trace:
             print("POST:", url)
             print("body:", body)
         return self.submit(lambda session, h: session.post(url, json=body, headers=h), headers)
 
     def delete_json(self, req, args=None, headers=None):
         url = self.build_url(req, args)
-        if self.trace:
+        if self._trace:
             print("DELETE:", url)
         r = self.submit(lambda session, h: session.delete(url, headers=h), headers)
         return r.json()
@@ -217,11 +231,27 @@ class Client:
     #-------- Misc --------
 
     def show(self):
+        """
+        Returns an object which displays Polaris information as either a plain-text
+        or HTML table.
+
+        For use in ineractive sections. Use the HTML mode in Jupyter:
+
+        show = client.show()
+        show.as_html()
+        show.tables()
+        """
         if self._show is None:
             self._show = Show(self)
         return self._show
 
     def get_token(self):
+        """
+        Internal method to get a temporary OAuth ticket given the client ID
+        and secret.
+
+        See https://docs.imply.io/polaris/oauth/
+        """
         params = {
             "client_id": self.client_id,
             "client_secret": self.secret,
@@ -233,47 +263,221 @@ class Client:
         self.token = r.json()
 
     def create_table(self, table):
+        """
+        Create a table given a name or table object.
+
+        Calls POST /v1/tables
+
+        Parameters
+        ----------
+        table: string or dict
+            If a string, the name of the (empty) table to create.
+            If a dict, the values of a TableRequest object.
+
+        See https://docs.imply.io/polaris/api-create-table/
+        See https://docs.imply.io/polaris/TablesApi/#create-a-table
+        """
         if type(table) is str:
             table = {'name': table}
         details = self.post_json(REQ_TABLES, table)
         return Table(self, details=details)
 
-    def tables(self):
-        return self.get_json(REQ_TABLES)['values']
+    def all_table_summaries(self):
+        """
+        Returns the summary informaton for all tables.
+
+        Calls GET /v1/tables?detail=summary
+
+        Returns
+        -------
+        A list of the table summaries. This is the list under the `value`
+        key in the REST response.
+
+        See https://docs.imply.io/polaris/TablesApi/#list-available-tables
+        """
+        return self.get_json(REQ_TABLES, params={'detail': 'summary'})['values']
+
+    def all_table_details(self):
+        """
+        Returns the detail informaton for all tables.
+
+        Calls GET /v1/tables?detail=detailed
+
+        Returns
+        -------
+        A list of the table details. This is the list under the `value`
+        key in the REST response.
+
+        See https://docs.imply.io/polaris/TablesApi/#list-available-tables
+        """
+        return self.get_json(REQ_TABLES, params={'detail': 'detailed'})['values']
+
+    def resolve_table_name(self, table_name):
+        """
+        Returns table summary information given a table name.
+
+        Calls `GET /v1/tables?name={table_name}`
+
+        Parameters
+        ----------
+        table_name: str
+            The name of the table.
+        
+        Returns
+        -------
+        A dict with the table name, id, description and last update time,
+        or None if the table is not defined.
+
+        See https://docs.imply.io/polaris/api-table-id/
+        """
+        values = self.get_json(REQ_TABLES, params={'name': table_name})['values']
+        if len(values) == 0:
+            return None
+        return values[0]
 
     def table_id(self, table_name):
-        tables = self.tables()
-        target = table_name.casefold()
-        for t in tables:
-            if t['name'].casefold() == target:
-                return t['id']
-        return None
+        """
+        Returns the ID for a table given the table name.
+
+        Calls `GET /v1/tables?name={table_name}`
+
+        Parameters
+        ----------
+        table_name: str
+            The name of the table.
+        
+        Returns
+        -------
+        The Table ID, or None if the table is not defined.
+
+        See https://docs.imply.io/polaris/api-table-id/
+        """
+        info = self.resolve_table_name(table_name)
+        if info is None:
+            return None
+        return info['id']
+
+    def table_summary(self, table_id):
+        """
+        Returns the summary metadata for a table.
+
+        Calls `GET /tables/{tableId}?detail=summary`
+
+        Parameters
+        ----------
+        table_id: str
+            The ID for the table.
+        
+        Returns
+        -------
+        The summary metadata for the table. See link below for details.
+
+        See https://docs.imply.io/polaris/TablesApi/#get-a-tables-metadata
+        See table_id(table_name) to get the table ID.
+        """
+        return self.get_json(REQ_TABLE, [table_id], params={'detail': 'summary'})
 
     def table_details(self, table_id):
-        return self.get_json(REQ_TABLE, [table_id])
+        """
+        Returns the detail metadata for a table.
+
+        Calls `GET /tables/{tableId}?detail=detailed`
+
+        Parameters
+        ----------
+        table_id: str
+            The ID for the table.
+        
+        Returns
+        -------
+        The detail metadata for the table. See link below for details.
+
+        See https://docs.imply.io/polaris/TablesApi/#get-a-tables-metadata
+        See table_id(table_name) to get the table ID.
+        """
+        return self.get_json(REQ_TABLE, [table_id], params={'detail': 'detailed'})
 
     def table_for_name(self, name):
-        id = self.table_id(name)
-        if id is None:
+        """
+        Return a Table object for a table given its name.
+
+        Raises an exception if the name is undefined.
+
+        Parameters
+        ----------
+        table_name: str
+            The name of the table.
+        """
+        info = self.resolve_table_name(name)
+        if info is None:
             raise Exception("Table '{}' is not defined".format(name))
-        return Table(self, id)
+        return Table(self, info)
 
     def table_for_id(self, id):
-        return Table(self, id)
+        """
+        Return a Table object for a table given its ID.
+
+        Raises an exception if the name is undefined.
+
+        Parameters
+        ----------
+        table_id: str
+            The ID for the table.
+        """
+        details = self.table_summary(id)
+        if details is None:
+            raise Exception("Table ID '{}' is not defined".format(id))
+        return Table(self, details)
 
     def schemas(self):
+        """
+        Returns the schemas for all tables.
+
+        Calls `GET /schemas`
+
+        Returns
+        -------
+        The set of schemas as a dict with the table name as a key.
+
+        See https://docs.imply.io/polaris/SchemasApi/#get-table-schemas
+        """
         return self.get_json(REQ_SCHEMAS)
 
     def push_events(self, table_id, events):
+        """
+        Push (insert) events into a table using its input schema.
+
+        Parameters
+        ----------
+        table_id: str
+            The table ID.
+        events: dict or array
+            The event(s) to push. Can be a single event as a dict, or an arrary
+            of such objects. Each object must include the `__time` column, along
+            with the other columns defined in the input schema.
+
+        See https://docs.imply.io/polaris/api-stream/
+        See https://docs.imply.io/polaris/EventsApi/
+        """
         if events is None:
             return
         if type(events) is not list:
             events = [events]
         # PITA: format must be line-delimited JSON
+        # (JSON Lines: https://jsonlines.org/)
         lines = [json.dumps(event) for event in events]
         return self.post(REQ_EVENTS, '\n'.join(lines), args=[table_id])
 
     def projects(self):
+        """
+        Returns the list of projects.
+
+        Returns the project list under the `values` key in the REST response.
+
+        Calls `/v1/projects`
+
+        See https://docs.imply.io/polaris/api-query/#get-project-id
+        """
         return self.get_json(REQ_PROJECTS)
 
     def set_project(self, proj_name):
@@ -283,6 +487,21 @@ class Client:
         self._project_id = proj['metadata']['uid']
 
     def project(self, proj_name):
+        """
+        Returns the project object for a project.
+
+        Parameters
+        ----------
+        proj_name: str
+            The name of the project
+
+        Returns
+        -------
+        The single project object for the named project, or None if the
+        project is not defined.
+
+        See projects()
+        """
         projects = self.projects()
         target = proj_name.casefold()
         for p in projects:
@@ -291,6 +510,11 @@ class Client:
         return None
 
     def default_project(self):
+        """
+        Return the project object for the default project.
+
+        See project(proj_name)
+        """
         projects = self.projects()
         for p in projects:
             if p['metadata']['name'] == consts.DEFAULT_PROJECT:
@@ -298,6 +522,32 @@ class Client:
         return None
 
     def sql(self, stmt):
+        """
+        Executes a SQL query and returns the results.
+
+        Polaris executes queries within the context of a project. This method
+        uses the project specified with set_project(), else the default project.
+
+        Calls `/v1/projects/{project_id}/query/sql`
+
+        Parameters
+        ----------
+        sql: str
+            A Druid SQL statement.
+
+        Returns
+        -------
+        The query result as an array of objects, where each object has key/value
+        pairs for each column.
+
+        Note that to figure out the schema for the results, you must scan the first
+        object. If your query returns no rows, there is no way to learn the schema.
+        That is, you cannot play the "LIMIT 0" trick to learn the result schema using
+        this API.
+
+        See https://docs.imply.io/polaris/api-query/
+        See https://docs.imply.io/latest/druid/querying/sql/
+        """
         if self._project_id is None:
             self.set_project(consts.DEFAULT_PROJECT)
         return self.post_json(REQ_QUERY, {'query': stmt}, args=[self._project_id])

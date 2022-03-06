@@ -3,15 +3,26 @@
 Python client for the Imply Polaris hosted Druid offering.
 
 This library provides a Python client to work with the REST API of Imply's Polaris
-product, which is a hosted version of Apache Druid. See the Polaris
-[developer guide](https://docs.imply.io/polaris/api-overview/) for an overiew
-of the REST API.
+product, which is a hosted version of Apache Druid.
+
+See the Polaris
+[Developer Guide](https://docs.imply.io/polaris/api-overview/) for an overiew
+of the REST API. The class documentation assumes you are familiar with
+Polaris concepts and the Polaris API. Each method refers to the Polaris
+documentation for the details.
+
+The documentation describes JSON objects, which mostly map directly into
+Python `dict` objects in this client. In some cases (identified in method
+comments), this client "unwraps" some Polaris boilerplate.
 
 The Poliaris API is at an early stage and is incomplete in some areas. This
 library works around those flaws where possible. Expect changes to the
 library as Polaris evolves.
 
 ## Getting Started
+
+You should already have a [Polaris account](https://imply.io/polaris-signup)
+(you can create a free trial.)
 
 First connect to your account:
 
@@ -55,7 +66,7 @@ client.tables()
   'timePartitioning': 'day'}]
 ```
 
-If you want to work with your account manually, we suggest using Jupyter.
+If you want to explore the API interactively, we suggest using Jupyter.
 Then, use the the `show()` function to display the results as a table:
 
 ```python
@@ -109,6 +120,10 @@ table.show_input_schema()
 table.insert({'__time': '2022-03-03T22:37:13Z', 'col1': 'value1', 'col2': 10})
 ```
 
+In Polaris, you create a table with a name, but then reference it via
+the ID. Use `client.table_id(name)` to get the ID for a table given its
+name. Or, just use the `Table` class which handles the ID for you.
+
 ## Queries
 
 To run a query:
@@ -122,3 +137,21 @@ show.sql('SELECT * FROM "my-table"')
 
 `client.sql(stmt)` runs the query and returns the results as a list of
 objects for programmatic use.
+
+## Details
+
+Each method references the API it uses, with a link to the Imply documentation.
+
+### Tracing
+
+You can see the APIs for each call with:
+
+```python
+client.trace(True)
+client.projects()
+
+>>> GET: https://api.eng.imply.io/v1/projects
+>>> [{'metadata': {'uid': '1b460394-3645-404d-a241-7ddbb7845ea6', ...
+```
+
+Tracing also shows the payload for `POST` calls.

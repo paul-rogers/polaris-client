@@ -1,11 +1,9 @@
 class Table:
 
-    def __init__(self, client, id=None, details=None):
+    def __init__(self, client, info):
         self._client = client
-        if id is None:
-            self._details = details
-        else:
-            self._details = client.table_details(id)
+        self._name = info['name']
+        self._id = info['id']
         self._schema = None
 
     def client(self):
@@ -15,14 +13,19 @@ class Table:
         return self._client.show()._display
 
     def name(self):
-        return self._details['name']
+        return self._name
 
     def id(self):
-        return self._details['id']
+        return self._id
+
+    def desription(self):
+        return self._client.resolve_table_name(self._name)['description']
+
+    def summary(self):
+        return self._client.table_summary(self._id)
 
     def details(self):
-        self._details = self._client.table_details(self.id())
-        return self._details
+        return self._client.table_details(self._id)
 
     def input_schema(self):
         return self.details().get('inputSchema')
@@ -30,14 +33,17 @@ class Table:
     def schema(self):
         if self._schema is None:
             schemas = self._client.schemas()
-            schema = schemas.get(self.name())
+            schema = schemas.get(self._name)
             if schema is None:
                 raise Exception("Schema not found")
             self._schema = schema['columns']
         return self._schema
 
+    def show_summary(self):
+        self._display().show_object(self.summary())
+
     def show_details(self):
-        self._display().show_object(self.id())
+        self._display().show_object(self.details())
 
     def show_input_schema(self):
         schema = self.input_schema()
@@ -51,4 +57,4 @@ class Table:
             self._display().show_object_list(schema, {'name': 'Name', 'type': 'Type'})
 
     def insert(self, rows):
-        self._client.push_events(self.id(), rows)
+        self._client.push_events(self._id, rows)
