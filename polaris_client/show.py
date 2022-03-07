@@ -36,11 +36,11 @@ class Show:
         self._display.show_object(obj)
 
     def tables(self):
-        tables = [[t['name']] for t in self._client.tables()]
+        tables = [[t['name']] for t in self._client.all_table_summaries()]
         self._display.show_table(tables, ['Table'])
 
     def table_details(self):
-        self._display.show_object_list(self._client.tables())
+        self._display.show_object_list(self._client.all_table_details())
 
     def projects(self):
         projs = self._client.projects()

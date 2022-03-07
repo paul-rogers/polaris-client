@@ -193,6 +193,8 @@ class Client:
             print("POST:", url)
             print("body:", body)
         r = self.submit(lambda session, h: session.post(url, data=body, headers=h), headers)
+        if self._trace:
+            print("Response code:", r.status_code)
         if require_ok:
             self.check_error(r)
         return r
@@ -221,12 +223,14 @@ class Client:
             print("body:", body)
         return self.submit(lambda session, h: session.post(url, json=body, headers=h), headers)
 
-    def delete_json(self, req, args=None, headers=None):
+    def delete_req(self, req, args=None, headers=None):
         url = self.build_url(req, args)
         if self._trace:
             print("DELETE:", url)
-        r = self.submit(lambda session, h: session.delete(url, headers=h), headers)
-        return r.json()
+        return self.submit(lambda session, h: session.delete(url, headers=h), headers)
+
+    def delete_json(self, req, args=None, headers=None):
+        return self.delete_req(req, args, headers).json()
 
     #-------- Misc --------
 
@@ -280,7 +284,22 @@ class Client:
         if type(table) is str:
             table = {'name': table}
         details = self.post_json(REQ_TABLES, table)
-        return Table(self, details=details)
+        return Table(self, details)
+
+    def drop_table(self, table_id):
+        """
+        Drops a table given its table ID.
+
+        Polaris returns OK even if the table does not exist. Check for
+        existence using table_summary() before droping if your app needs
+        to distinguish these two cases.
+
+        Parameters
+        ----------
+        table_id: str
+            The ID for the table.
+        """
+        return self.delete_req(REQ_TABLE, args=[table_id])
 
     def all_table_summaries(self):
         """
@@ -375,7 +394,7 @@ class Client:
         See https://docs.imply.io/polaris/TablesApi/#get-a-tables-metadata
         See table_id(table_name) to get the table ID.
         """
-        return self.get_json(REQ_TABLE, [table_id], params={'detail': 'summary'})
+        return self.get_json(REQ_TABLE, args=[table_id], params={'detail': 'summary'})
 
     def table_details(self, table_id):
         """
@@ -395,7 +414,7 @@ class Client:
         See https://docs.imply.io/polaris/TablesApi/#get-a-tables-metadata
         See table_id(table_name) to get the table ID.
         """
-        return self.get_json(REQ_TABLE, [table_id], params={'detail': 'detailed'})
+        return self.get_json(REQ_TABLE, args=[table_id], params={'detail': 'detailed'})
 
     def table_for_name(self, name):
         """

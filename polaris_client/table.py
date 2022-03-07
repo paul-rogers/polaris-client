@@ -1,3 +1,21 @@
+# Copyright 2022 Paul Rogers
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import requests
+from xmlrpc.client import Boolean
+
+
 class Table:
 
     def __init__(self, client, info):
@@ -46,15 +64,58 @@ class Table:
         self._display().show_object(self.details())
 
     def show_input_schema(self):
+        """
+        Displays the table input schema.
+
+        Note that the input schema does not include the mandatory
+        `__time` column in the current Polaris version.
+        """
         schema = self.input_schema()
         if schema == None or len(schema) == 0:
             return
         self._display().show_object_list(schema, {'name': 'Name', 'type': 'Type'})
 
     def show_schema(self):
+        """
+        Displays the table schema.
+        """
         schema = self.schema()
         if schema is not None:
             self._display().show_object_list(schema, {'name': 'Name', 'type': 'Type'})
 
     def insert(self, rows):
+        """
+        Insert one or more rows to the table using the Push API.
+
+        The rows must match the table's "input schema." All dates must be within
+        the last week, else they will be silently ignored by Polaris.
+        """
         self._client.push_events(self._id, rows)
+
+    def drop(self):
+        """
+        Drop this table and all its data.
+
+        Note that it may take Polaris a while to actually delete the table. If you want to
+        immediately create a new one, poll the exists() method until the method returns False.
+
+        After this call, this object remains valid, but the only legal operation is a call
+        to exists(). 
+        """
+        self._client.drop_table(self._id)
+
+    def exists(self) -> Boolean:
+        """
+        Check if the table exists.
+
+        Use this after dropping a table to detect when Polaris has completed the
+        deletion process, if you then want to create a new table with the same
+        name.
+        """
+        try:
+            self.details()
+            return True
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == requests.codes.not_found:
+                return False 
+            raise e

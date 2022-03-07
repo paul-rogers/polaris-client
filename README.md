@@ -19,12 +19,17 @@ The Poliaris API is at an early stage and is incomplete in some areas. This
 library works around those flaws where possible. Expect changes to the
 library as Polaris evolves.
 
+See [druid-client](https://github.com/paul-rogers/druid-client) for a similar 
+client for Apache (and Imply) Druid.
+
 ## Getting Started
 
 You should already have a [Polaris account](https://imply.io/polaris-signup)
-(you can create a free trial.)
+(you can create a free trial.) You must also create a
+[custom API client](https://docs.imply.io/polaris/oauth/#create-a-custom-api-client)
+to use below.
 
-First connect to your account:
+Then connect to your account:
 
 ```python
 import polaris_client
@@ -32,7 +37,7 @@ import polaris_client
 org = 'your-org'
 client_id = 'your-client-id'
 secret = 'your-secret'
-client = polaris_client.connect(org, client_id, client)
+client = polaris_client.connect(org, client_id, secret)
 ```
 
 See [Authenticate API requests](https://docs.imply.io/polaris/oauth/) for
@@ -48,7 +53,7 @@ If you are on a non-standard domain, add the domain
 as a named argument:
 
 ```python
-client = polaris_client.connect(org, client_id, client, domain='test')
+client = polaris_client.connect(org, client_id, secret, domain='test')
 ```
 
 Once connected you can use the Polaris APIs. There are two forms. The
@@ -105,23 +110,42 @@ table.id()
 >>> 9b4va3ea-dbdf-4d40-af5c-965450755556
 
 table.show_schema()
+```
 
->>> Name   | Type
->>> __time | LONG
->>> col1   | STRING
->>> col2   | LONG
+Results:
 
+```text
+Name   | Type
+__time | LONG
+col1   | STRING
+col2   | LONG
+```
+
+To see the "input schema" for pushing events:
+
+```python
 table.show_input_schema()
+```
 
->>> Name   | Type
->>> col1   | STRING
->>> col2   | LONG
+Results:
 
+```text
+Name   | Type
+col1   | STRING
+col2   | LONG
+```
+
+The actual pushed event must include the `__time` column as well. To add data:
+
+```python
 table.insert({'__time': '2022-03-03T22:37:13Z', 'col1': 'value1', 'col2': 10})
 ```
 
-In Polaris, you create a table with a name, but then reference it via
-the ID. Use `client.table_id(name)` to get the ID for a table given its
+Note that the python `datetime.isoformat()` method will produce the correct format
+for the `__time` field.
+
+In Polaris, you create a table with a name, but then reference it in the
+RST API via the ID. Use `client.table_id(name)` to get the ID for a table given its
 name. Or, just use the `Table` class which handles the ID for you.
 
 ## Queries
@@ -138,11 +162,40 @@ show.sql('SELECT * FROM "my-table"')
 `client.sql(stmt)` runs the query and returns the results as a list of
 objects for programmatic use.
 
-## Details
+## Method Documentation
 
 Each method references the API it uses, with a link to the Imply documentation.
+In Jupyter, use `help()` to see the available methods given an instance of
+that object:
 
-### Tracing
+```python
+help(client)
+help(show)
+help(table)
+```
+
+To see the detailed documentation, with links:
+
+```python
+help(client.projects)
+```
+
+Displays:
+
+```text
+Help on method projects in module polaris_client.client:
+
+projects() method of polaris_client.client.Client instance
+    Returns the list of projects.
+    
+    Returns the project list under the `values` key in the REST response.
+    
+    Calls `/v1/projects`
+    
+    See https://docs.imply.io/polaris/api-query/#get-project-id
+``` 
+
+## Tracing
 
 You can see the APIs for each call with:
 
@@ -154,4 +207,5 @@ client.projects()
 >>> [{'metadata': {'uid': '1b460394-3645-404d-a241-7ddbb7845ea6', ...
 ```
 
-Tracing also shows the payload for `POST` calls.
+Tracing also shows the payload for `POST` calls and the raw details
+of error messages.
