@@ -15,7 +15,7 @@ The documentation describes JSON objects, which mostly map directly into
 Python `dict` objects in this client. In some cases (identified in method
 comments), this client "unwraps" some Polaris boilerplate.
 
-The Poliaris API is at an early stage and is incomplete in some areas. This
+The Polaris API is at an early stage and is incomplete in some areas. This
 library works around those flaws where possible. Expect changes to the
 library as Polaris evolves.
 
@@ -27,7 +27,8 @@ client for Apache (and Imply) Druid.
 You should already have a [Polaris account](https://imply.io/polaris-signup)
 (you can create a free trial.) You must also create a
 [custom API client](https://docs.imply.io/polaris/oauth/#create-a-custom-api-client)
-to use below.
+to use below. Remember to give your client the service account roles needed
+for those APIs you wish to use.
 
 Then connect to your account:
 

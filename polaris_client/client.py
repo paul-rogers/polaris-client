@@ -28,6 +28,14 @@ REQ_PROJECTS = "/projects"
 REQ_QUERY = REQ_PROJECTS + "/{}/query/sql"
 REQ_EVENTS = "/events/{}"
 
+# Internal Imply API to enable push streaming for a table
+REQ_ENABLE_PUSH = REQ_TABLE + '/ingestion/streaming'
+
+class NotFoundException(Exception):
+
+    def __init__(self, msg):
+        Exception.__init__(self, msg)
+
 class Client:
 
     def __init__(self, org, client_id, secret, domain=None):
@@ -40,7 +48,7 @@ class Client:
         self.session = requests.Session()
         self._show = None
         self._project_id = None
-        self.get_token()
+        self.renew_token()
 
     #-------- REST --------
 
@@ -135,7 +143,7 @@ class Client:
         '''
         r = req(self.session, self.add_token(headers))
         if r.status_code == requests.codes.unauthorized:
-            self.get_token()
+            self.renew_token()
             r = req(self.session, self.add_token(headers))
         return r
     
@@ -249,10 +257,13 @@ class Client:
             self._show = Show(self)
         return self._show
 
-    def get_token(self):
+    def renew_token(self):
         """
-        Internal method to get a temporary OAuth ticket given the client ID
-        and secret.
+        Renews the temporary OAuth ticket using the client ID
+        and secret for this client.
+
+        Normally done automatically internally, most clients never need
+        to call this method.
 
         See https://docs.imply.io/polaris/oauth/
         """
@@ -429,7 +440,7 @@ class Client:
         """
         info = self.resolve_table_name(name)
         if info is None:
-            raise Exception("Table '{}' is not defined".format(name))
+            raise NotFoundException("Table '{}' is not defined".format(name))
         return Table(self, info)
 
     def table_for_id(self, id):
@@ -445,7 +456,7 @@ class Client:
         """
         details = self.table_summary(id)
         if details is None:
-            raise Exception("Table ID '{}' is not defined".format(id))
+            raise NotFoundException("Table ID '{}' is not defined".format(id))
         return Table(self, details)
 
     def schemas(self):
@@ -540,6 +551,19 @@ class Client:
                 return p
         return None
 
+    def infer_project(self):
+        projects = self.projects()
+        if len(projects) == 0:
+            raise NotFoundException("No projects found")
+        if len(projects) == 1:
+            self._project_id = projects[0]['metadata']['uid']
+            return
+        for p in projects:
+            if p['metadata']['name'] == consts.DEFAULT_PROJECT:
+                self._project_id = p['metadata']['uid']
+                return
+        raise Exception("More than one project defined: please call set_project()")
+
     def sql(self, stmt):
         """
         Executes a SQL query and returns the results.
@@ -568,5 +592,11 @@ class Client:
         See https://docs.imply.io/latest/druid/querying/sql/
         """
         if self._project_id is None:
-            self.set_project(consts.DEFAULT_PROJECT)
+            self.infer_project()
         return self.post_json(REQ_QUERY, {'query': stmt}, args=[self._project_id])
+
+    def enable_push_for_table(self, table_id):
+        return self.post(REQ_ENABLE_PUSH, '', args=[table_id])
+
+    def disable_push_for_table(self, table_id):
+        return self.delete_req(REQ_ENABLE_PUSH, args=[table_id])

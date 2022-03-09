@@ -15,6 +15,16 @@
 import requests
 from xmlrpc.client import Boolean
 
+SUMMARY_LABELS = {
+    'name': "Name",
+    'id': "ID",
+    'version': 'Version',
+    'lastUpdateDateTime': 'Last Update',
+    'lastModifiedByUsername': 'Updated By',
+    'createdByUsername': 'Created By',
+    'timePartitioning': 'Time Partitioning',
+    'pushEndpointUrl': 'Push Endpoint'
+}
 
 class Table:
 
@@ -58,10 +68,16 @@ class Table:
         return self._schema
 
     def show_summary(self):
-        self._display().show_object(self.summary())
+        self._display().show_object(self.summary(), SUMMARY_LABELS)
 
     def show_details(self):
-        self._display().show_object(self.details())
+        labels = SUMMARY_LABELS.copy()
+        labels.update({
+            'status': 'Status',
+            'totalDataSize': 'Data Size (bytes)',
+            'totalRows': 'Row Count',
+        })
+        self._display().show_object(self.details(), labels)
 
     def show_input_schema(self):
         """
@@ -119,3 +135,13 @@ class Table:
             if e.response is not None and e.response.status_code == requests.codes.not_found:
                 return False 
             raise e
+
+    def enable_push(self):
+        return self._client.enable_push_for_table(self._id)
+
+    def disable_push(self):
+        self._client.disable_push_for_table(self._id)
+
+    def is_push_enabled(self):
+        details = self.details()
+        return details.get('pushEndpointUrl') is not None

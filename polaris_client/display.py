@@ -80,7 +80,9 @@ def object_to_table(table, obj, labels):
     labels = infer_keys(obj) if labels is None else labels
     table_rows = []
     for key, head in labels.items():
-        table_rows.append([head, obj.get(key)])
+        value = obj.get(key)
+        value = '' if value is None else str(value)
+        table_rows.append([head, value])
     table.headers(['Key', 'Value'])
     table.show(table_rows)
 
