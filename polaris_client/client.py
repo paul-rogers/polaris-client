@@ -27,6 +27,8 @@ REQ_SCHEMAS = "/schemas"
 REQ_PROJECTS = "/projects"
 REQ_QUERY = REQ_PROJECTS + "/{}/query/sql"
 REQ_EVENTS = "/events/{}"
+REQ_FILES = "/files"
+REQ_FILE = REQ_FILES + "/{}"
 
 # Internal Imply API to enable push streaming for a table
 REQ_ENABLE_PUSH = REQ_TABLE + '/ingestion/streaming'
@@ -99,6 +101,11 @@ class Client:
             error = "Not found"
         if error is not None:
             response.reason = error
+        if code == requests.codes.not_found:
+            e = NotFoundException(error)
+            e.response = response
+            e.json = json
+            raise e
         try:
             response.raise_for_status()
         except Exception as e:
@@ -276,6 +283,8 @@ class Client:
         r = self.session.post(POST_TOKEN.format(self.domain, self.org), data=params)
         r.raise_for_status()
         self.token = r.json()
+
+    #-------- Tables --------
 
     def create_table(self, table):
         """
@@ -473,6 +482,8 @@ class Client:
         """
         return self.get_json(REQ_SCHEMAS)
 
+    #-------- Ingestion --------
+
     def push_events(self, table_id, events):
         """
         Push (insert) events into a table using its input schema.
@@ -497,6 +508,14 @@ class Client:
         # (JSON Lines: https://jsonlines.org/)
         lines = [json.dumps(event) for event in events]
         return self.post(REQ_EVENTS, '\n'.join(lines), args=[table_id])
+
+    def enable_push_for_table(self, table_id):
+        return self.post(REQ_ENABLE_PUSH, '', args=[table_id])
+
+    def disable_push_for_table(self, table_id):
+        return self.delete_req(REQ_ENABLE_PUSH, args=[table_id])
+
+    #-------- Projects --------
 
     def projects(self):
         """
@@ -564,6 +583,8 @@ class Client:
                 return
         raise Exception("More than one project defined: please call set_project()")
 
+    #-------- Query --------
+
     def sql(self, stmt):
         """
         Executes a SQL query and returns the results.
@@ -595,8 +616,52 @@ class Client:
             self.infer_project()
         return self.post_json(REQ_QUERY, {'query': stmt}, args=[self._project_id])
 
-    def enable_push_for_table(self, table_id):
-        return self.post(REQ_ENABLE_PUSH, '', args=[table_id])
+    #-------- Files --------
 
-    def disable_push_for_table(self, table_id):
-        return self.delete_req(REQ_ENABLE_PUSH, args=[table_id])
+    def list_files(self):
+        return self.get_json(REQ_FILES)['files']
+
+    def delete_file(self, name):
+        r = self.delete_req(REQ_FILE, args=[name])
+        if r.status_code == requests.codes.no_content:
+            return
+        if r.status_code == requests.codes.not_found:
+            raise NotFoundException("File not found: " + name)
+        self.check_error(r)
+
+    def file_metadata(self, name):
+        return self.get_json(REQ_FILE, args=[name])
+
+    def file_exists(self, name):
+        try:
+            self.file_metadata(name)
+            return True
+        except NotFoundException:
+            return False
+
+    def upload_file(self, local_path, name=None, format=None, compression=None, verify=False):
+        if name is None:
+            import os.path
+            name = os.path.basename(local_path)
+        params = None
+        if format is not None or compression is not None:
+            params = {}
+            if format is not None:
+                params['dataFormat'] = format
+            if compression is not None:
+                params['compressionFormat'] = compression
+        def do_upload(session, h):
+            with open(local_path, 'rb') as f:
+                files = {'file': (name, f)}
+                return session.post(self.build_url(REQ_FILES), headers=h, files=files, params=params)
+        r = self.submit(do_upload)
+        self.check_error(r)
+        if verify:
+            import hashlib
+            file_md5 = hashlib.md5(open(local_path,'rb').read()).hexdigest()
+            metadata = self.file_metadata(name)
+            polaris_hash = metadata["digest"]["hash"].lower()
+            if file_md5 != polaris_hash:
+                raise Exception("Checksum doesn't match for uploadef file: " + name)
+        return r.json()
+                

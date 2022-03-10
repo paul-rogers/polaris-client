@@ -88,3 +88,23 @@ class Show:
             return
         self._display.show_object_list(results)
 
+    def files(self):
+        files = self._client.list_files()
+        table = []
+        for file in files:
+            table.append([file['name'], file['dataFormat'], toMb(file['sizeBytes'])])
+        heads = ['Name', 'Format', 'Size (MB)']
+        self._display.show_table(table, heads)
+
+    def file(self, file_name):
+        metadata = self._client.file_metadata(file_name)
+        labels = {
+            'name': 'Name',
+            'id': 'ID',
+            'sizeBytes': 'Size (Bytes)',
+            'dataFormat': 'Format',
+            'compressionFormat': 'Compression Format',
+            'digest': 'Digest',
+            'uploadedOnDatetime': 'Uploaded'
+        }
+        self._display.show_object(metadata, labels)
